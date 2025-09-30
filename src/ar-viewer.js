@@ -1,61 +1,64 @@
 (() => {
   class ARViewer {
     constructor() {
-      this.scene = document.createElement("a-scene");
-      this.scene.setAttribute("embedded", "");
-      this.scene.setAttribute(
+      this._aframeScene = document.createElement("a-scene");
+      this._aframeScene.setAttribute("embedded", "");
+      this._aframeScene.setAttribute(
         "arjs",
         "sourceType: webcam; debugUIEnabled: false"
       );
-      this.scene.setAttribute("vr-mode-ui", "enabled: true");
+      this._aframeScene.setAttribute("vr-mode-ui", "enabled: true");
 
-      this.camera = document.createElement("a-camera");
-      this.camera.setAttribute("position", "0 0 0");
-      this.camera.setAttribute("look-controls", "touchEnabled: false");
-      this.scene.appendChild(this.camera);
+      this._aframeCamera = document.createElement("a-camera");
+      this._aframeCamera.setAttribute("position", "0 0 0");
+      this._aframeCamera.setAttribute("look-controls", "touchEnabled: false");
+      this._aframeScene.appendChild(this._aframeCamera);
 
-      this.threeScene = this.scene.object3D;
+      this._aframeThreeScene = this._aframeScene.object3D;
 
-      this.isDragging = false;
-      this.dragStart = null;
-      this.moveMode = false;
-      this.moveTimeout = null;
-      this.pinchStartDist = null;
-      this.scale = 1.0;
+      this._group = null;
+      this._model = null;
+      this._panel = null;
+
+      this._isDragging = false;
+      this._dragStart = null;
+      this._moveMode = false;
+      this._moveTimeout = null;
+      this._pinchStartDist = null;
+      this._scale = 1.0;
+      this._heightRange = { min: -1, max: 1 };
     }
 
     view(model, options = undefined) {
-      this.heightRange = options?.heightRange
-        ? options?.heightRange
-        : { min: -1, max: 1 };
-      document.body.appendChild(this.scene);
+      document.body.appendChild(this._aframeScene);
+
+      if (options?.heightRange) this._heightRange = options?.heightRange;
 
       const bbox = new THREE.Box3().setFromObject(model, true);
-
       const height = bbox.max.z - bbox.min.z;
       const width = bbox.max.x - bbox.min.x;
       const depth = bbox.max.y - bbox.min.y;
 
-      this.panel = this.getPanel(width * 1.1, depth * 1.1);
-      this.panel.rotateX(Math.PI / 2);
-      this.panel.visible = false;
-      this.panel.position.set(
+      this._panel = this._getPanel(width * 1.1, depth * 1.1);
+      this._panel.rotateX(Math.PI / 2);
+      this._panel.visible = false;
+      this._panel.position.set(
         model.position.x,
         model.position.y - height / 2 - 0.01,
         model.position.z
       );
 
-      this.group = new THREE.Group();
-      this.group.add(model);
-      this.group.add(this.panel);
+      this._group = new THREE.Group();
+      this._group.add(model);
+      this._group.add(this._panel);
 
-      this.lookAtModel();
-      this.setEventListeners();
-      this.addSlider();
+      this._lookAtModel();
+      this._setEventListeners();
+      this._addSlider();
     }
 
-    lookAtModel() {
-      const box = new THREE.Box3().setFromObject(this.group, true);
+    _lookAtModel() {
+      const box = new THREE.Box3().setFromObject(this._group, true);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       const distance = Math.max(size.x, size.y, size.z) * 3;
@@ -63,10 +66,10 @@
       const y = center.y + size.y / 2;
       const z = center.z + distance;
       const cameraPosition = `${x} ${y} ${z}`;
-      this.camera.setAttribute("position", cameraPosition);
+      this._aframeCamera.setAttribute("position", cameraPosition);
     }
 
-    getPanel(width, height, color = 0xf9f7b6) {
+    _getPanel(width, height, color = 0xf9f7b6) {
       const r = Math.min(width, height) / 20;
       const left = 0;
       const right = width;
@@ -107,63 +110,63 @@
       return new THREE.Mesh(geometry, material);
     }
 
-    rotateY(event) {
-      if (this.moveTimeout) clearTimeout(this.moveTimeout);
+    _rotateY(event) {
+      if (this._moveTimeout) clearTimeout(this._moveTimeout);
       const touch = event.touches[0];
-      const deltaX = touch.pageX - this.dragStart.x;
+      const deltaX = touch.pageX - this._dragStart.x;
       const toRadians = Math.PI / window.innerWidth;
 
-      this.group.rotateY(deltaX * toRadians);
-      this.dragStart = { x: touch.pageX, y: touch.pageY };
+      this._group.rotateY(deltaX * toRadians);
+      this._dragStart = { x: touch.pageX, y: touch.pageY };
     }
 
-    moveY(value) {
+    _moveY(value) {
       const proportion = value * 0.01;
-      const min = this.heightRange.min;
-      const max = this.heightRange.max;
+      const min = this._heightRange.min;
+      const max = this._heightRange.max;
       const range = max - min;
       const current = range * proportion + min;
       const clamped = Math.max(min, Math.min(max, current));
-      this.group.position.y = clamped;
+      this._group.position.y = clamped;
     }
 
-    moveXZ(event) {
+    _moveXZ(event) {
       const touch = event.touches[0];
-      const deltaX = touch.pageX - this.dragStart.x;
-      const deltaY = touch.pageY - this.dragStart.y;
+      const deltaX = touch.pageX - this._dragStart.x;
+      const deltaY = touch.pageY - this._dragStart.y;
       const sensitivity = 0.01;
 
-      this.group.position.x += deltaX * sensitivity;
-      this.group.position.z += deltaY * sensitivity;
+      this._group.position.x += deltaX * sensitivity;
+      this._group.position.z += deltaY * sensitivity;
 
-      this.dragStart.x = touch.pageX;
-      this.dragStart.y = touch.pageY;
+      this._dragStart.x = touch.pageX;
+      this._dragStart.y = touch.pageY;
     }
 
-    scaleModel(event) {
+    _scaleModel(event) {
       const dx = event.touches[0].pageX - event.touches[1].pageX;
       const dy = event.touches[0].pageY - event.touches[1].pageY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      let factor = dist / this.pinchStartDist;
-      let newScale = this.scale * factor;
+      let factor = dist / this._pinchStartDist;
+      let newScale = this._scale * factor;
       newScale = Math.max(0.5, Math.min(2.0, newScale));
 
-      this.group.scale.set(newScale, newScale, newScale);
+      this._group.scale.set(newScale, newScale, newScale);
 
-      this.pinchStartDist = dist;
-      this.scale = newScale;
+      this._pinchStartDist = dist;
+      this._scale = newScale;
     }
 
-    addPanel() {
-      this.panel.visible = true;
+    _addPanel() {
+      this._panel.visible = true;
     }
 
-    removePanel() {
-      this.panel.visible = false;
+    _removePanel() {
+      this._panel.visible = false;
     }
 
-    addSlider() {
+    _addSlider() {
       const slider = document.createElement("input");
       slider.type = "range";
       slider.min = 0;
@@ -192,62 +195,62 @@
         });
       });
 
-      this.moveY(slider.value);
+      this._moveY(slider.value);
 
       slider.addEventListener("input", () => {
-        this.moveY(slider.value);
+        this._moveY(slider.value);
       });
     }
 
-    setEventListeners() {
-      this.scene.addEventListener("loaded", () => {
-        this.threeScene.add(this.group);
+    _setEventListeners() {
+      this._aframeScene.addEventListener("loaded", () => {
+        this._aframeThreeScene.add(this._group);
       });
 
-      this.scene.addEventListener("touchstart", (event) => {
+      this._aframeScene.addEventListener("touchstart", (event) => {
         if (event.touches.length === 1) {
-          this.dragStart = {
+          this._dragStart = {
             x: event.touches[0].pageX,
             y: event.touches[0].pageY,
           };
-          this.isDragging = true;
+          this._isDragging = true;
 
-          this.moveTimeout = setTimeout(() => {
-            this.moveMode = true;
-            this.addPanel();
+          this._moveTimeout = setTimeout(() => {
+            this._moveMode = true;
+            this._addPanel();
           }, 500);
         }
         if (event.touches.length === 2) {
-          clearTimeout(this.moveTimeout);
-          this.isDragging = false;
-          this.moveMode = false;
-          this.removePanel();
+          clearTimeout(this._moveTimeout);
+          this._isDragging = false;
+          this._moveMode = false;
+          this._removePanel();
 
           const dx = event.touches[0].pageX - event.touches[1].pageX;
           const dy = event.touches[0].pageY - event.touches[1].pageY;
-          this.pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+          this._pinchStartDist = Math.sqrt(dx * dx + dy * dy);
         }
       });
 
-      this.scene.addEventListener("touchmove", (event) => {
+      this._aframeScene.addEventListener("touchmove", (event) => {
         event.preventDefault();
         if (event.touches.length === 1) {
-          if (this.moveMode) this.moveXZ(event);
-          else if (this.isDragging) this.rotateY(event);
+          if (this._moveMode) this._moveXZ(event);
+          else if (this._isDragging) this._rotateY(event);
         }
-        if (event.touches.length === 2 && this.pinchStartDist !== null)
-          this.scaleModel(event);
+        if (event.touches.length === 2 && this._pinchStartDist !== null)
+          this._scaleModel(event);
       });
 
-      this.scene.addEventListener("touchend", (event) => {
-        clearTimeout(this.moveTimeout);
-        if (this.moveMode) {
-          this.moveMode = false;
-          this.removePanel();
+      this._aframeScene.addEventListener("touchend", (event) => {
+        clearTimeout(this._moveTimeout);
+        if (this._moveMode) {
+          this._moveMode = false;
+          this._removePanel();
         }
         if (event.touches.length === 0) {
-          this.isDragging = false;
-          this.pinchStartDist = null;
+          this._isDragging = false;
+          this._pinchStartDist = null;
         }
       });
     }
