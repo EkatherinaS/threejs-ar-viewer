@@ -1,6 +1,25 @@
+const Box3 = THREE.Box3;
+const Group = THREE.Group;
+const Shape = THREE.Shape;
+const Mesh = THREE.Mesh;
+const MeshBasicMaterial = THREE.MeshBasicMaterial;
+const Vector3 = THREE.Vector3;
+
 (() => {
-  class ARViewer {
+  /**
+ Модуль AR
+ @module Site3dAR
+ */
+
+  /**
+ Класс работы с AR
+ @class Site3dAR
+ @constructor
+ */
+  class Site3dAR {
     constructor() {
+      this._isOn = false;
+
       this._aframeScene = document.createElement("a-scene");
       this._aframeScene.setAttribute("embedded", "");
       this._aframeScene.setAttribute(
@@ -18,65 +37,111 @@
 
       this._group = null;
       this._model = null;
-      this._panel = null;
+      this._selection = null;
 
       this._isDragging = false;
       this._dragStart = null;
       this._moveMode = false;
       this._moveTimeout = null;
       this._pinchStartDist = null;
-      this._scale = 1.0;
-      this._heightRange = { min: -1, max: 1 };
+      this._scaleValue = 1.0;
+      this._heightRange = 1.0;
+
+      this._end = null;
     }
 
-    view(model, options = undefined) {
+    /**
+   Свойство возвращает истину, если AR включен
+   @property isOn
+   @type boolean
+   */
+    get isOn() {
+      return this._isOn;
+    }
+
+    /**
+   Метод включает AR
+   @method on
+   @param    {Object3D} model    Модель
+   @param    {object} options    Параметры режима AR:
+   - heightRange - Диапазон изменения высоты модели
+   - end - Функция, запускаемая после выхода из режима AR
+   */
+    on(model, options) {
+      if (this.isOn) {
+        return;
+      }
+
+      this._model = model;
+
+      const optionsCur = {
+        heightRange: {
+          min: -1,
+          max: 1,
+        },
+        end: null,
+        ...options,
+      };
+
+      this._heightRange = optionsCur.heightRange;
+      this._end = optionsCur.end;
+
       document.body.appendChild(this._aframeScene);
 
-      if (options?.heightRange) this._heightRange = options?.heightRange;
+      const modelPosition = model.position;
+      const bbox = new Box3().setFromObject(model, true);
 
-      const bbox = new THREE.Box3().setFromObject(model, true);
       const height = bbox.max.z - bbox.min.z;
       const width = bbox.max.x - bbox.min.x;
       const depth = bbox.max.y - bbox.min.y;
 
-      this._panel = this._getPanel(width * 1.1, depth * 1.1);
-      this._panel.rotateX(Math.PI / 2);
-      this._panel.visible = false;
-      this._panel.position.set(
-        model.position.x,
-        model.position.y - height / 2 - 0.01,
-        model.position.z
+      this._selection = this._getSelection(width * 1.1, depth * 1.1);
+      this._selection.rotateX(Math.PI / 2);
+      this._selection.visible = false;
+      this._selection.position.set(
+        modelPosition.x,
+        modelPosition.y - height / 2 - 0.01,
+        modelPosition.z
       );
 
-      this._group = new THREE.Group();
+      this._group = new Group();
       this._group.add(model);
-      this._group.add(this._panel);
+      this._group.add(this._selection);
 
       this._lookAtModel();
       this._setEventListeners();
       this._addSlider();
+
+      this._isOn = true;
     }
 
-    _lookAtModel() {
-      const box = new THREE.Box3().setFromObject(this._group, true);
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-      const distance = Math.max(size.x, size.y, size.z) * 3;
-      const x = center.x;
-      const y = center.y + size.y / 2;
-      const z = center.z + distance;
-      const cameraPosition = `${x} ${y} ${z}`;
-      this._aframeCamera.setAttribute("position", cameraPosition);
+    /**
+   Метод выключает AR
+   @method off
+   */
+    off() {
+      if (!this.isOn) {
+        return;
+      }
+
+      this._isOn = false;
+
+      this._callEnd();
     }
 
-    _getPanel(width, height, color = 0xf9f7b6) {
+    _getSelection(width, height, options = undefined) {
+      const optionsCur = {
+        color: "#ffb800",
+        ...options,
+      };
+
       const r = Math.min(width, height) / 20;
       const left = 0;
       const right = width;
       const top = height;
       const bottom = 0;
 
-      const shape = new THREE.Shape();
+      const shape = new Shape();
       shape.moveTo(left + r, top);
       shape.lineTo(right - r, top);
       shape.quadraticCurveTo(right, top, right, top - r);
@@ -98,36 +163,24 @@
         bevelSegments: 1,
       };
 
-      const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+      const geometry = new ExtrudeGeometry(shape, extrudeSettings);
       geometry.center();
 
-      const material = new THREE.MeshBasicMaterial({
-        color: color,
+      const material = new MeshBasicMaterial({
+        color: optionsCur.color,
         transparent: true,
         opacity: 0.5,
       });
 
-      return new THREE.Mesh(geometry, material);
+      return new Mesh(geometry, material);
     }
 
-    _rotateY(event) {
-      if (this._moveTimeout) clearTimeout(this._moveTimeout);
-      const touch = event.touches[0];
-      const deltaX = touch.pageX - this._dragStart.x;
-      const toRadians = Math.PI / window.innerWidth;
-
-      this._group.rotateY(deltaX * toRadians);
-      this._dragStart = { x: touch.pageX, y: touch.pageY };
+    _showSelection() {
+      this._selection.visible = true;
     }
 
-    _moveY(value) {
-      const proportion = value * 0.01;
-      const min = this._heightRange.min;
-      const max = this._heightRange.max;
-      const range = max - min;
-      const current = range * proportion + min;
-      const clamped = Math.max(min, Math.min(max, current));
-      this._group.position.y = clamped;
+    _hideSelection() {
+      this._selection.visible = false;
     }
 
     _moveXZ(event) {
@@ -143,27 +196,120 @@
       this._dragStart.y = touch.pageY;
     }
 
-    _scaleModel(event) {
+    _moveY(value) {
+      const proportion = value * 0.01;
+      const min = this._heightRange.min;
+      const max = this._heightRange.max;
+      const range = max - min;
+      const current = range * proportion + min;
+      const clamped = Math.max(min, Math.min(max, current));
+
+      this._group.position.y = clamped;
+    }
+
+    _scale(event) {
       const dx = event.touches[0].pageX - event.touches[1].pageX;
       const dy = event.touches[0].pageY - event.touches[1].pageY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       let factor = dist / this._pinchStartDist;
-      let newScale = this._scale * factor;
+      let newScale = this.scale * factor;
       newScale = Math.max(0.5, Math.min(2.0, newScale));
 
       this._group.scale.set(newScale, newScale, newScale);
 
       this._pinchStartDist = dist;
-      this._scale = newScale;
+      this._scaleValue = newScale;
     }
 
-    _addPanel() {
-      this._panel.visible = true;
+    _rotateY(event) {
+      if (this._moveTimeout) {
+        clearTimeout(this._moveTimeout);
+      }
+
+      const touch = event.touches[0];
+      const deltaX = touch.pageX - this._dragStart.x;
+      const toRadians = Math.PI / window.innerWidth;
+
+      this._group.rotateY(deltaX * toRadians);
+      this._dragStart = {
+        x: touch.pageX,
+        y: touch.pageY,
+      };
     }
 
-    _removePanel() {
-      this._panel.visible = false;
+    _lookAtModel() {
+      const box = new Box3().setFromObject(this._group, true);
+      const size = box.getSize(new Vector3());
+      const center = box.getCenter(new Vector3());
+      const distance = Math.max(size.x, size.y, size.z) * 3;
+      const x = center.x;
+      const y = center.y + size.y / 2;
+      const z = center.z + distance;
+      const cameraPosition = `${x} ${y} ${z}`;
+
+      this._aframeCamera.setAttribute("position", cameraPosition);
+    }
+
+    _setEventListeners() {
+      this._aframeScene.addEventListener("loaded", () => {
+        this._aframeThreeScene.add(this._group);
+      });
+
+      this._aframeScene.addEventListener("touchstart", (event) => {
+        if (event.touches.length === 1) {
+          this._dragStart = {
+            x: event.touches[0].pageX,
+            y: event.touches[0].pageY,
+          };
+          this._isDragging = true;
+
+          this._moveTimeout = setTimeout(() => {
+            this._moveMode = true;
+            this._showSelection();
+          }, 500);
+        }
+        if (event.touches.length === 2) {
+          clearTimeout(this._moveTimeout);
+          this._isDragging = false;
+          this._moveMode = false;
+          this._hideSelection();
+
+          const dx = event.touches[0].pageX - event.touches[1].pageX;
+          const dy = event.touches[0].pageY - event.touches[1].pageY;
+          this._pinchStartDist = Math.sqrt(dx * dx + dy * dy);
+        }
+      });
+
+      this._aframeScene.addEventListener("touchmove", (event) => {
+        event.preventDefault();
+
+        if (event.touches.length === 1) {
+          if (this._moveMode) {
+            this._moveXZ(event);
+          } else if (this._isDragging) {
+            this._rotateY(event);
+          }
+        }
+
+        if (event.touches.length === 2 && this._pinchStartDist !== null) {
+          this._scale(event);
+        }
+      });
+
+      this._aframeScene.addEventListener("touchend", (event) => {
+        clearTimeout(this._moveTimeout);
+
+        if (this._moveMode) {
+          this._moveMode = false;
+          this._hideSelection();
+        }
+
+        if (event.touches.length === 0) {
+          this._isDragging = false;
+          this._pinchStartDist = null;
+        }
+      });
     }
 
     _addSlider() {
@@ -202,59 +348,13 @@
       });
     }
 
-    _setEventListeners() {
-      this._aframeScene.addEventListener("loaded", () => {
-        this._aframeThreeScene.add(this._group);
-      });
-
-      this._aframeScene.addEventListener("touchstart", (event) => {
-        if (event.touches.length === 1) {
-          this._dragStart = {
-            x: event.touches[0].pageX,
-            y: event.touches[0].pageY,
-          };
-          this._isDragging = true;
-
-          this._moveTimeout = setTimeout(() => {
-            this._moveMode = true;
-            this._addPanel();
-          }, 500);
-        }
-        if (event.touches.length === 2) {
-          clearTimeout(this._moveTimeout);
-          this._isDragging = false;
-          this._moveMode = false;
-          this._removePanel();
-
-          const dx = event.touches[0].pageX - event.touches[1].pageX;
-          const dy = event.touches[0].pageY - event.touches[1].pageY;
-          this._pinchStartDist = Math.sqrt(dx * dx + dy * dy);
-        }
-      });
-
-      this._aframeScene.addEventListener("touchmove", (event) => {
-        event.preventDefault();
-        if (event.touches.length === 1) {
-          if (this._moveMode) this._moveXZ(event);
-          else if (this._isDragging) this._rotateY(event);
-        }
-        if (event.touches.length === 2 && this._pinchStartDist !== null)
-          this._scaleModel(event);
-      });
-
-      this._aframeScene.addEventListener("touchend", (event) => {
-        clearTimeout(this._moveTimeout);
-        if (this._moveMode) {
-          this._moveMode = false;
-          this._removePanel();
-        }
-        if (event.touches.length === 0) {
-          this._isDragging = false;
-          this._pinchStartDist = null;
-        }
-      });
+    _callEnd() {
+      if (this._end) {
+        this._end();
+        this._end = null;
+      }
     }
   }
 
-  window.ARViewer = ARViewer;
+  window.Site3dAR = Site3dAR;
 })();
