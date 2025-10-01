@@ -1,9 +1,12 @@
-const Box3 = THREE.Box3;
-const Group = THREE.Group;
-const Shape = THREE.Shape;
-const Mesh = THREE.Mesh;
-const MeshBasicMaterial = THREE.MeshBasicMaterial;
-const Vector3 = THREE.Vector3;
+const {
+  Box3,
+  Mesh,
+  Group,
+  Shape,
+  Vector3,
+  MeshBasicMaterial,
+  ExtrudeGeometry,
+} = THREE;
 
 (() => {
   /**
@@ -189,8 +192,19 @@ const Vector3 = THREE.Vector3;
       const deltaY = touch.pageY - this._dragStart.y;
       const sensitivity = 0.01;
 
-      this._group.position.x += deltaX * sensitivity;
-      this._group.position.z += deltaY * sensitivity;
+      const camera = this._aframeCamera.object3D;
+      const normDeltaX = deltaX / window.innerWidth;
+      const normDeltaY = -(deltaY / window.innerHeight);
+
+      const move = new THREE.Vector3(normDeltaX, normDeltaY, 0);
+      move.applyQuaternion(camera.quaternion);
+      move.y = 0;
+      move.normalize();
+
+      this._group.position.addScaledVector(
+        move,
+        sensitivity * Math.sqrt(deltaX * deltaX + deltaY * deltaY)
+      );
 
       this._dragStart.x = touch.pageX;
       this._dragStart.y = touch.pageY;
@@ -213,7 +227,7 @@ const Vector3 = THREE.Vector3;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       let factor = dist / this._pinchStartDist;
-      let newScale = this.scale * factor;
+      let newScale = this._scaleValue * factor;
       newScale = Math.max(0.5, Math.min(2.0, newScale));
 
       this._group.scale.set(newScale, newScale, newScale);
